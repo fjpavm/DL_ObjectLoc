@@ -14,6 +14,7 @@ challenge2_real_csv = "annotations.csv"
 
 Image_Width = 1920
 Image_Height = 1080
+NumClasses = 330 + 1
 
 # Reads annotation file into a full annotations list, as well as by image and by class dicts
 # annotation is dict with keys:
@@ -101,8 +102,23 @@ if __name__ == '__main__':
    # Max area size: [280. 196.]
    # Max size: [352. 236.]
 
+   # predictions shape: (1, 34, 60, 1280)
+   # image shape: (1080, 1920, 3)
+   # preprocessed image shape: (1080, 1920, 3)
+
     input_layer = keras.Input(shape=(Image_Height, Image_Width, 3))    
-    mobileNetV2 = keras.applications.mobilenet_v2.MobileNetV2(input_tensor=input_layer, include_top=False)
+    mobileNetV2 = keras.applications.mobilenet_v2.MobileNetV2(include_top=False, input_tensor=input_layer)
+    mobileNetV2.trainable = False
+    mobileNet_out = mobileNetV2(input_layer, training=False) 
+    intermediate_net_1 = keras.layers.Conv2D(400, (1,1), padding='same', activation='relu', name='learning_input_reduction')(mobileNet_out)
+    boundingBox_out = keras.layers.Conv2D(4, (7,7), padding='same', activation='linear', name='BB_out')(intermediate_net_1)
+    object_out = keras.layers.Conv2D(2, (7,7), padding='same', activation='softmax', name='obj_out')(intermediate_net_1)
+    intermediate_net_2 = keras.layers.DepthwiseConv2D((7,7), padding='same', activation='relu', name='class_net')(intermediate_net_1)
+    class_out = keras.layers.Conv2D(NumClasses, (1,1), padding='same', activation='softmax', name='class_out')(intermediate_net_2)
+
+    mobileNetV2.summary()
+    model = keras.Model(input_layer, [boundingBox_out, object_out, class_out])
+    model.summary()
 
     img_count = 0
     images = dict()
@@ -121,6 +137,7 @@ if __name__ == '__main__':
         #plt.close()
         fig = createFigure('image '+image_name)
         plt.imshow(image)
+        # TODO: draw boundery and label text
         plt.show(block=False)
         fig = createFigure('preprocessed '+image_name)
         plt.imshow(preprocessed)
