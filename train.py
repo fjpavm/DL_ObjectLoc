@@ -18,7 +18,9 @@ Image_Width = 1920
 Image_Height = 1080
 NumClasses = 330 + 1
 
-BATCH_SIZE = 1
+BATCH_SIZE = 3
+
+MY_EPOCHS = 100
 
 # Reads annotation file into a full annotations list, as well as by image and by class dicts
 # annotation is dict with keys:
@@ -158,7 +160,7 @@ class DatasetFromImageNames_Generator(keras.utils.Sequence) :
 
         return np.array(batch_images), [np.array(batch_BBoxes), np.array(batch_Objects), np.array(batch_Classes)]
 
-def separateData(list_of_data, numTrain=200, numValidate=30, numTest=200):
+def separateData(list_of_data, numTrain=400, numValidate=40, numTest=200):
     list_of_data_copy = list(list_of_data)
     random.shuffle(list_of_data_copy)
     train_list = list_of_data_copy[0:numTrain]
@@ -243,7 +245,6 @@ if __name__ == '__main__':
     ClassModel = keras.Model(input_layer, class_out)
 
     model = keras.Model(input_layer, [boundingBox_out, object_out, class_out])
-    model.summary()
     sparce_top5 = keras.metrics.SparseTopKCategoricalAccuracy(k=5)
     
     model.compile(optimizer='adam', 
@@ -260,7 +261,8 @@ if __name__ == '__main__':
         test_names_json = JsonUtils.readJsonFromFile('test_names.json')
         test_names = test_names_json['name_list']
         names_list = [image_name for image_name in annotations_by_image.keys() if image_name not in test_names]
-        train_names, validate_names, tmp = separateData(annotations_by_image.keys(),numTest=0)
+        train_names, validate_names, tmp = separateData(names_list,numTest=0)
+        print('remembered to exclude test dataset')
 
     train_gen = DatasetFromImageNames_Generator(train_names,BATCH_SIZE,annotations_by_image,classMap)
     val_gen = DatasetFromImageNames_Generator(validate_names,BATCH_SIZE,annotations_by_image,classMap)
@@ -270,8 +272,13 @@ if __name__ == '__main__':
 
     if(os.path.exists('last_weights.h5')):
         model.load_weights('last_weights.h5')
-    model.fit(train_gen, batch_size=BATCH_SIZE, epochs=10, validation_data=val_gen, callbacks=[model_checkpoint])
-    model.save_weights('last_weights.h5')
+        print('loaded last saved weights')
+    model.summary()
+    for epoch in range(MY_EPOCHS):
+        print(f"Starting Epoch {epoch}/{MY_EPOCHS}")
+        model.fit(train_gen, batch_size=BATCH_SIZE, epochs=1, validation_data=val_gen, callbacks=[model_checkpoint])
+        model.save_weights('last_weights.h5')
+        train_names, validate_names, tmp = separateData(names_list,numTest=0)
     """  img_count = 0
     images = dict()
     image_path = os.path.join(dataset_path['syn'], image_sub_path) 
