@@ -58,11 +58,74 @@ def createFigure(title=''):
     graph.axis("off") 
 
     return fig
-               
+
+# Adda a 5 pixel border in red channel
+def highlightAnnotation(in_image, annotation):
+    BBMin = annotation["centre"]-annotation["size"]/2
+    BBMax = annotation["centre"]+annotation["size"]/2
+    BBMin = np.around(BBMin).astype(int)
+    BBMax = np.around(BBMax).astype(int)
+
+    for y in range(BBMin[1], BBMax[1]):
+        for x in range(BBMin[0], BBMax[0]):
+            if x-BBMin[0] < 5 or BBMax[0]-x < 5 or y-BBMin[1] < 5 or BBMax[1]-y < 5 :
+                in_image[y][x][0] = 1.0
+
+def extractBestAnnotationForBlock(in_blockCentre, in_image_annotations):
+    minOverlap = 16 #pixels
+    blockRangeHalfSize = (32.0*7)/2
+    bestAnnotation = None
+    bestDistance = np.inf
+    # check for objects in block range with at least 16 pixel width and height overlap
+    # and from these choose object annotation closest to centre as best
+    for annotation in in_image_annotations:
+        annotationCentre = annotation['centre']
+        annotationHalfSize = annotation['size']/2
+        centreDiff = annotationCentre-in_blockCentre
+        if (abs(centreDiff[0]) < blockRangeHalfSize + annotationHalfSize[0] - minOverlap) and (abs(centreDiff[1]) < blockRangeHalfSize + annotationHalfSize[0] - minOverlap): 
+            centreDistance = np.linalg.norm(annotationCentre-in_blockCentre)
+            if centreDistance < bestDistance:
+                bestAnnotation = annotation
+    return bestAnnotation
+
+def createTrainingForImage(in_imageName, in_annotations_by_image, in_classMap):
+    image_annotations = in_annotations_by_image[in_imageName]
+    BBPrediction = np.zeros((34,60,4))
+    ObjectPrediction = np.zeros((34,60),dtype=int)
+    ClassPrediction = np.zeros((34,60),dtype=int)
+
+    for blockY in range(34):
+        for blockX in range(60):
+            blockCentre = np.array([blockX*32 +16, blockY*32+16], dtype=float)
+            bestAnnotation = extractBestAnnotationForBlock(blockCentre, image_annotations)
+            if bestAnnotation == None:
+                # default no object to X and Y size of block (32 pixels)
+                BBPrediction[blockY][blockX][2] = 32
+                BBPrediction[blockY][blockX][3] = 32
+            else:
+                centre = bestAnnotation['centre']-blockCentre
+                size = bestAnnotation['size']
+                BBPrediction[blockY][blockX][0] = centre[0] 
+                BBPrediction[blockY][blockX][1] = centre[1]
+                BBPrediction[blockY][blockX][2] = size[0]
+                BBPrediction[blockY][blockX][3] = size[1]
+                ObjectPrediction[blockY][blockX] = 1
+                ClassPrediction[blockY][blockX] = in_classMap['toInt'][bestAnnotation['class']]
+    return BBPrediction, ObjectPrediction, ClassPrediction
+
 
 if __name__ == '__main__':
     challenge1_csv_path = os.path.join(syn_dataset_path, challenge1_syn_csv) 
     annotations_list, annotations_by_image, annotations_by_class = read_annotation_file(challenge1_csv_path)
+    # create classMap for this run
+    classMap = dict()
+    toIntMap = dict()
+    toClassMap = ['NO_OBJECT'] + list(annotations_by_class.keys())
+    for classInt in range(len(toClassMap)):
+        toIntMap[toClassMap[classInt]] = classInt
+    classMap['toInt'] = toIntMap
+    classMap['toClass'] = toClassMap
+
     print(f"Number of annotations: {len(annotations_list)}")
     print(f"Number of images: {len(annotations_by_image.keys())}")
     print(f"Number of classes: {len(annotations_by_class.keys())}")
@@ -102,7 +165,10 @@ if __name__ == '__main__':
    # Max area size: [280. 196.]
    # Max size: [352. 236.]
 
-   # predictions shape: (1, 34, 60, 1280)
+   # mobileNetV2 predictions shape: (1, 34, 60, 1280)
+   # BBmodel predictions shape: (1, 34, 60, 4)
+   # ObjModel predictions shape: (1, 34, 60, 2)
+   # ClassModel predictions shape: (1, 34, 60, NumClasses)
    # image shape: (1080, 1920, 3)
    # preprocessed image shape: (1080, 1920, 3)
 
@@ -119,6 +185,10 @@ if __name__ == '__main__':
     mobileNetV2.summary()
     model = keras.Model(input_layer, [boundingBox_out, object_out, class_out])
     model.summary()
+    BBmodel = keras.Model(input_layer, boundingBox_out)
+    ObjModel = keras.Model(input_layer, object_out)
+    ClassModel = keras.Model(input_layer, class_out)
+
 
     img_count = 0
     images = dict()
@@ -128,9 +198,23 @@ if __name__ == '__main__':
         img_count+=1
         preprocessed = keras.applications.mobilenet_v2.preprocess_input(image)
         batch_preprocessed = np.array([preprocessed])
-        predictions = mobileNetV2.predict(batch_preprocessed)
+        predictions = ObjModel.predict(batch_preprocessed)
 
-        print(f"predictions shape: {np.shape(predictions)}")
+        BBPrediction, ObjectPrediction, ClassPrediction = createTrainingForImage(image_name, annotations_by_image, classMap)
+
+        annotation = dict()
+        blockX = 10
+        blockY = 10
+        blockCentre = np.array([blockX*32 +16, blockY*32+16], dtype=float)
+        annotation['class'] = classMap['toClass'][ClassPrediction[blockY][blockX]]
+        annotation['centre'] = blockCentre + np.array([BBPrediction[blockY][blockX][0], BBPrediction[blockY][blockX][1]])
+        annotation['size'] = np.array([BBPrediction[blockY][blockX][2], BBPrediction[blockY][blockX][3]])
+
+        print(f"{annotation['class']} at {annotation['centre']}")
+
+        highlightAnnotation(preprocessed, annotation)
+
+        print(f"new model predictions shape: {np.shape(predictions)}")
         print(f"image shape: {np.shape(image)}")
         print(f"preprocessed image shape: {np.shape(preprocessed)}")
         #images[image_name] = image
