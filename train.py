@@ -4,6 +4,7 @@ from tensorflow.keras import layers
 from matplotlib import pyplot as plt
 import os
 import ProfilingUtils
+import JsonUtils
 import random
 
 dataset_path = dict()
@@ -158,7 +159,7 @@ class DatasetFromImageNames_Generator(keras.utils.Sequence) :
 
         return np.array(batch_images), [np.array(batch_BBoxes), np.array(batch_Objects), np.array(batch_Classes)]
 
-def separateData(list_of_data, numTrain=3200, numValidate=320, numTest=100):
+def separateData(list_of_data, numTrain=200, numValidate=30, numTest=200):
     list_of_data_copy = list(list_of_data)
     random.shuffle(list_of_data_copy)
     train_list = list_of_data_copy[0:numTrain]
@@ -248,10 +249,19 @@ if __name__ == '__main__':
     
     model.compile(optimizer='adam', 
                     loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy'], 
-                    loss_weights=[1.0, 1.0, 1.0],
-                    metrics={'BB_out':'mean_squared_error', 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
+                    loss_weights=[0.5, 1.0, 2.0],
+                    metrics={'BB_out':keras.metrics.RootMeanSquaredError(), 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
 
-    train_names, validate_names, test_names = separateData(annotations_by_image.keys())
+    if(not os.path.exists('test_names.json')):
+        train_names, validate_names, test_names = separateData(annotations_by_image.keys())
+        test_names_json = dict()
+        test_names_json['name_list'] = test_names
+        JsonUtils.writeJsonToFile('test_names.json',test_names_json)
+    else:
+        test_names_json = JsonUtils.readJsonFromFile('test_names.json')
+        test_names = test_names_json['name_list']
+        names_list = [image_name for image_name in annotations_by_image.keys() if image_name not in test_names]
+        train_names, validate_names, tmp = separateData(annotations_by_image.keys(),numTest=0)
 
     train_gen = DatasetFromImageNames_Generator(train_names,BATCH_SIZE,annotations_by_image,classMap)
     val_gen = DatasetFromImageNames_Generator(validate_names,BATCH_SIZE,annotations_by_image,classMap)
@@ -259,8 +269,10 @@ if __name__ == '__main__':
 
     model_checkpoint=keras.callbacks.ModelCheckpoint('../weights/EdIntel_weights{epoch:02d}.h5',save_weights_only=True)
 
+    if(os.path.exists('last_weights.h5')):
+        model.load_weights('last_weights.h5')
     model.fit(train_gen, batch_size=BATCH_SIZE, epochs=10, validation_data=val_gen, callbacks=[model_checkpoint])
-
+    model.save_weights('last_weights.h5')
     """  img_count = 0
     images = dict()
     image_path = os.path.join(dataset_path['syn'], image_sub_path) 
