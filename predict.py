@@ -89,11 +89,8 @@ def findTopNPredict(in_N, in_pred):
 def highlightAllInPredictions(in_image, in_BBPrediction, in_ObjectPrediction, in_ClassPrediction, in_classMap):
     #TODO: use input image dimentions to calculate prediction shapes
 
-    blockX = 30
-    blockY = 14
-    if True:
-    #for blockY in range(34):
-    #    for blockX in range(60):
+    for blockY in range(34):
+        for blockX in range(60):
             blockCentre = np.array([blockX*32 +16, blockY*32+16], dtype=float)
             predictedClass = findTopNPredict(1, in_ClassPrediction[blockY][blockX])[0]
             if in_ObjectPrediction[blockY][blockX][1] > 0.5 and predictedClass > 0:
@@ -213,6 +210,7 @@ if __name__ == '__main__':
     boundingBox_out = keras.layers.Conv2D(4, (7,7), padding='same', activation='linear', name='BB_out')(intermediate_net_2)
     object_out = keras.layers.Conv2D(2, (7,7), padding='same', activation='softmax', name='obj_out')(intermediate_net_2)
     class_out = keras.layers.Conv2D(NumClasses, (1,1), padding='same', activation='softmax', name='class_out')(intermediate_net_2)
+    count_out = keras.layers.Conv2D(1, (9,9), activation='linear', padding='same', name='count_out')(object_out)
 
     #mobileNetV2.summary()
     
@@ -220,7 +218,7 @@ if __name__ == '__main__':
     ObjModel = keras.Model(input_layer, object_out)
     ClassModel = keras.Model(input_layer, class_out)
 
-    model = keras.Model(input_layer, [boundingBox_out, object_out, class_out])
+    model = keras.Model(input_layer, [boundingBox_out, object_out, class_out, count_out])
     sparce_top5 = keras.metrics.SparseTopKCategoricalAccuracy(k=5)
     
     model.compile(optimizer='adam', 

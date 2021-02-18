@@ -129,7 +129,6 @@ def createTrainingForImage(in_imageName, in_annotations_by_image, in_classMap):
                 BBPrediction[blockY][blockX][1] = 0
                 BBPrediction[blockY][blockX][2] = 0
                 BBPrediction[blockY][blockX][3] = 0
-
             else:
                 centre = bestAnnotation['centre']-blockCentre
                 size = bestAnnotation['size']
@@ -263,11 +262,14 @@ if __name__ == '__main__':
     ObjModel = keras.Model(input_layer, object_out)
     ClassModel = keras.Model(input_layer, class_out)
 
-    old_model = keras.Model(input_layer, [boundingBox_out, object_out, class_out])
-    old_model.load_weights('last_weights_old.h5')
+    #old_model = keras.Model(input_layer, [boundingBox_out, object_out, class_out])
+    #old_model.load_weights('last_weights_old.h5')
     model = keras.Model(input_layer, [boundingBox_out, object_out, class_out, count_out])
 
     sparce_top5 = keras.metrics.SparseTopKCategoricalAccuracy(k=5)
+
+    def sparse_categorical_crossentropy_except_0(y_true, y_pred):
+        
     
     model.compile(optimizer='adam', 
                     loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
