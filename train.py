@@ -18,9 +18,9 @@ Image_Width = 1920
 Image_Height = 1080
 NumClasses = 330 + 1
 
-BATCH_SIZE = 3
+BATCH_SIZE = 2
 
-MY_EPOCHS = 100
+#MY_EPOCHS = 100
 
 # Reads annotation file into a full annotations list, as well as by image and by class dicts
 # annotation is dict with keys:
@@ -113,8 +113,11 @@ def createTrainingForImage(in_imageName, in_annotations_by_image, in_classMap):
             bestAnnotation = extractBestAnnotationForBlock(blockCentre, image_annotations)
             if bestAnnotation == None:
                 # default no object to X and Y size of block (32 pixels)
+                BBPrediction[blockY][blockX][0] = int(random.uniform(-32*3.5,32*3.5))
+                BBPrediction[blockY][blockX][1] = int(random.uniform(-32*3.5,32*3.5))
                 BBPrediction[blockY][blockX][2] = 32
                 BBPrediction[blockY][blockX][3] = 32
+
             else:
                 centre = bestAnnotation['centre']-blockCentre
                 size = bestAnnotation['size']
@@ -160,7 +163,7 @@ class DatasetFromImageNames_Generator(keras.utils.Sequence) :
 
         return np.array(batch_images), [np.array(batch_BBoxes), np.array(batch_Objects), np.array(batch_Classes)]
 
-def separateData(list_of_data, numTrain=400, numValidate=40, numTest=200):
+def separateData(list_of_data, numTrain=200, numValidate=40, numTest=200):
     list_of_data_copy = list(list_of_data)
     random.shuffle(list_of_data_copy)
     train_list = list_of_data_copy[0:numTrain]
@@ -233,9 +236,9 @@ if __name__ == '__main__':
     mobileNetV2.trainable = False
     mobileNet_out = mobileNetV2(input_layer, training=False) 
     intermediate_net_1 = keras.layers.Conv2D(400, (1,1), padding='same', activation='relu', name='learning_input_reduction')(mobileNet_out)
-    boundingBox_out = keras.layers.Conv2D(4, (7,7), padding='same', activation='linear', name='BB_out')(intermediate_net_1)
-    object_out = keras.layers.Conv2D(2, (7,7), padding='same', activation='softmax', name='obj_out')(intermediate_net_1)
     intermediate_net_2 = keras.layers.DepthwiseConv2D((7,7), padding='same', activation='relu', name='class_net')(intermediate_net_1)
+    boundingBox_out = keras.layers.Conv2D(4, (7,7), padding='same', activation='linear', name='BB_out')(intermediate_net_2)
+    object_out = keras.layers.Conv2D(2, (7,7), padding='same', activation='softmax', name='obj_out')(intermediate_net_2)
     class_out = keras.layers.Conv2D(NumClasses, (1,1), padding='same', activation='softmax', name='class_out')(intermediate_net_2)
 
     #mobileNetV2.summary()
@@ -249,7 +252,7 @@ if __name__ == '__main__':
     
     model.compile(optimizer='adam', 
                     loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy'], 
-                    loss_weights=[0.5, 1.0, 2.0],
+                    loss_weights=[0.05, 1.0, 5.0],
                     metrics={'BB_out':keras.metrics.RootMeanSquaredError(), 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
 
     if(not os.path.exists('test_names.json')):
@@ -274,11 +277,14 @@ if __name__ == '__main__':
         model.load_weights('last_weights.h5')
         print('loaded last saved weights')
     model.summary()
-    for epoch in range(MY_EPOCHS):
-        print(f"Starting Epoch {epoch}/{MY_EPOCHS}")
+    #for epoch in range(MY_EPOCHS):
+    if True:
+        #print(f"Starting Epoch {epoch}/{MY_EPOCHS}")
         model.fit(train_gen, batch_size=BATCH_SIZE, epochs=1, validation_data=val_gen, callbacks=[model_checkpoint])
         model.save_weights('last_weights.h5')
         train_names, validate_names, tmp = separateData(names_list,numTest=0)
+        train_gen = DatasetFromImageNames_Generator(train_names,BATCH_SIZE,annotations_by_image,classMap)
+        val_gen = DatasetFromImageNames_Generator(validate_names,BATCH_SIZE,annotations_by_image,classMap)
     """  img_count = 0
     images = dict()
     image_path = os.path.join(dataset_path['syn'], image_sub_path) 
