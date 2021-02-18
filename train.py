@@ -85,20 +85,30 @@ def highlightAnnotation(in_image, annotation):
 
 def extractBestAnnotationForBlock(in_blockCentre, in_image_annotations):
     minOverlap = 16 #pixels
-    blockRangeHalfSize = (32.0*7)/2
+    blockRangeHalfSize = (32.0*1)/2
     bestAnnotation = None
     bestDistance = np.inf
-    # check for objects in block range with at least 16 pixel width and height overlap
-    # and from these choose object annotation closest to centre as best
+    # check for objects with centre in block and from these choose object annotation closest to centre as best
     for annotation in in_image_annotations:
         annotationCentre = annotation['centre']
         annotationHalfSize = annotation['size']/2
         centreDiff = annotationCentre-in_blockCentre
-        if (abs(centreDiff[0]) < blockRangeHalfSize + annotationHalfSize[0] - minOverlap) and (abs(centreDiff[1]) < blockRangeHalfSize + annotationHalfSize[0] - minOverlap): 
+        if (abs(centreDiff[0]) < blockRangeHalfSize) and (abs(centreDiff[1]) < blockRangeHalfSize): 
             centreDistance = np.linalg.norm(annotationCentre-in_blockCentre)
             if centreDistance < bestDistance:
                 bestAnnotation = annotation
     return bestAnnotation
+
+def countAnnotationsWithinRange(in_blockCentre, in_image_annotations, in_range):
+    blockRangeHalfSize = (32.0*in_range)/2
+    count = 0
+    for annotation in in_image_annotations:
+        annotationCentre = annotation['centre']
+        annotationHalfSize = annotation['size']/2
+        centreDiff = annotationCentre-in_blockCentre
+        if (abs(centreDiff[0]) < blockRangeHalfSize) and (abs(centreDiff[1]) < blockRangeHalfSize): 
+            count+=1
+    return count
 
 def createTrainingForImage(in_imageName, in_annotations_by_image, in_classMap):
     image_annotations = in_annotations_by_image[in_imageName]
@@ -106,17 +116,19 @@ def createTrainingForImage(in_imageName, in_annotations_by_image, in_classMap):
     BBPrediction = np.zeros((34,60,4))
     ObjectPrediction = np.zeros((34,60),dtype=int)
     ClassPrediction = np.zeros((34,60),dtype=int)
+    CountPrediction = np.zeros((34,60),dtype=float)
 
     for blockY in range(34):
         for blockX in range(60):
             blockCentre = np.array([blockX*32 +16, blockY*32+16], dtype=float)
+            CountPrediction[blockY][blockX] = countAnnotationsWithinRange(blockCentre, image_annotations, 9)
             bestAnnotation = extractBestAnnotationForBlock(blockCentre, image_annotations)
             if bestAnnotation == None:
                 # default no object to X and Y size of block (32 pixels)
-                BBPrediction[blockY][blockX][0] = int(random.uniform(-32*3.5,32*3.5))
-                BBPrediction[blockY][blockX][1] = int(random.uniform(-32*3.5,32*3.5))
-                BBPrediction[blockY][blockX][2] = 32
-                BBPrediction[blockY][blockX][3] = 32
+                BBPrediction[blockY][blockX][0] = 0
+                BBPrediction[blockY][blockX][1] = 0
+                BBPrediction[blockY][blockX][2] = 0
+                BBPrediction[blockY][blockX][3] = 0
 
             else:
                 centre = bestAnnotation['centre']-blockCentre
@@ -127,7 +139,7 @@ def createTrainingForImage(in_imageName, in_annotations_by_image, in_classMap):
                 BBPrediction[blockY][blockX][3] = size[1]
                 ObjectPrediction[blockY][blockX] = 1
                 ClassPrediction[blockY][blockX] = in_classMap['toInt'][bestAnnotation['class']]
-    return BBPrediction, ObjectPrediction, ClassPrediction
+    return BBPrediction, ObjectPrediction, ClassPrediction, CountPrediction
 
 class DatasetFromImageNames_Generator(keras.utils.Sequence) :
 
@@ -147,6 +159,7 @@ class DatasetFromImageNames_Generator(keras.utils.Sequence) :
         batch_BBoxes = list()
         batch_Objects = list()
         batch_Classes = list()
+        batch_Count = list()
 
         #Create batch training data from filenames
         for image_name in batch_image_names:
@@ -156,12 +169,13 @@ class DatasetFromImageNames_Generator(keras.utils.Sequence) :
             preprocessed = keras.applications.mobilenet_v2.preprocess_input(image)
             batch_images.append(preprocessed)
 
-            BBPrediction, ObjectPrediction, ClassPrediction = createTrainingForImage(image_name, self.m_annotations_by_image, self.m_classMap)
+            BBPrediction, ObjectPrediction, ClassPrediction, CountPrediction = createTrainingForImage(image_name, self.m_annotations_by_image, self.m_classMap)
             batch_BBoxes.append(BBPrediction)
             batch_Objects.append(ObjectPrediction)
             batch_Classes.append(ClassPrediction)
+            batch_Count.append(CountPrediction)
 
-        return np.array(batch_images), [np.array(batch_BBoxes), np.array(batch_Objects), np.array(batch_Classes)]
+        return np.array(batch_images), [np.array(batch_BBoxes), np.array(batch_Objects), np.array(batch_Classes), np.array(batch_Count)]
 
 def separateData(list_of_data, numTrain=200, numValidate=40, numTest=200):
     list_of_data_copy = list(list_of_data)
@@ -240,6 +254,8 @@ if __name__ == '__main__':
     boundingBox_out = keras.layers.Conv2D(4, (7,7), padding='same', activation='linear', name='BB_out')(intermediate_net_2)
     object_out = keras.layers.Conv2D(2, (7,7), padding='same', activation='softmax', name='obj_out')(intermediate_net_2)
     class_out = keras.layers.Conv2D(NumClasses, (1,1), padding='same', activation='softmax', name='class_out')(intermediate_net_2)
+    count_out = keras.layers.Conv2D(1, (9,9), activation='linear', padding='same', name='count_out')(object_out)
+
 
     #mobileNetV2.summary()
     
@@ -247,12 +263,15 @@ if __name__ == '__main__':
     ObjModel = keras.Model(input_layer, object_out)
     ClassModel = keras.Model(input_layer, class_out)
 
-    model = keras.Model(input_layer, [boundingBox_out, object_out, class_out])
+    old_model = keras.Model(input_layer, [boundingBox_out, object_out, class_out])
+    old_model.load_weights('last_weights_old.h5')
+    model = keras.Model(input_layer, [boundingBox_out, object_out, class_out, count_out])
+
     sparce_top5 = keras.metrics.SparseTopKCategoricalAccuracy(k=5)
     
     model.compile(optimizer='adam', 
-                    loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy'], 
-                    loss_weights=[0.05, 1.0, 5.0],
+                    loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
+                    loss_weights=[0.05, 1.0, 5.0, 1.0],
                     metrics={'BB_out':keras.metrics.RootMeanSquaredError(), 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
 
     if(not os.path.exists('test_names.json')):
