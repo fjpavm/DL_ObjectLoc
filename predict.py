@@ -78,6 +78,8 @@ def highlightAnnotation(in_image, annotation):
 
     for y in range(BBMin[1], BBMax[1]):
         for x in range(BBMin[0], BBMax[0]):
+            if BBMin[0] < 0 or BBMin[1] < 0 or BBMax[0] >= Image_Width or BBMax[1] >= Image_Height:
+                continue
             if x-BBMin[0] < 5 or BBMax[0]-x < 5 or y-BBMin[1] < 5 or BBMax[1]-y < 5 :
                 in_image[y][x][0] = 1.0
 
@@ -92,8 +94,11 @@ def highlightAllInPredictions(in_image, in_BBPrediction, in_ObjectPrediction, in
     for blockY in range(34):
         for blockX in range(60):
             blockCentre = np.array([blockX*32 +16, blockY*32+16], dtype=float)
-            predictedClass = findTopNPredict(1, in_ClassPrediction[blockY][blockX])[0]
-            if in_ObjectPrediction[blockY][blockX][1] > 0.5 and predictedClass > 0:
+            predictedTop2 = findTopNPredict(2, in_ClassPrediction[blockY][blockX])
+            predictedClass = predictedTop2[0] 
+            if predictedClass == 0 and in_ClassPrediction[blockY][blockX][0] < 0.8:
+                predictedClass = 1
+            if in_ObjectPrediction[blockY][blockX][1] > 0.5: # and predictedClass > 0:
                 annotation = dict()
                 annotation['class'] = classMap['toClass'][predictedClass]
                 annotation['centre'] = blockCentre + np.array([in_BBPrediction[blockY][blockX][0], in_BBPrediction[blockY][blockX][1]])
@@ -209,7 +214,7 @@ if __name__ == '__main__':
     intermediate_net_2 = keras.layers.DepthwiseConv2D((7,7), padding='same', activation='relu', name='class_net')(intermediate_net_1)
     boundingBox_out = keras.layers.Conv2D(4, (7,7), padding='same', activation='linear', name='BB_out')(intermediate_net_2)
     object_out = keras.layers.Conv2D(2, (7,7), padding='same', activation='softmax', name='obj_out')(intermediate_net_2)
-    class_out = keras.layers.Conv2D(NumClasses, (1,1), padding='same', activation='softmax', name='class_out')(intermediate_net_2)
+    class_out = keras.layers.Conv2D(NumClasses, (1,1), padding='same', activation='sigmoid', name='class_out')(intermediate_net_2)
     count_out = keras.layers.Conv2D(1, (9,9), activation='linear', padding='same', name='count_out')(object_out)
 
     #mobileNetV2.summary()
