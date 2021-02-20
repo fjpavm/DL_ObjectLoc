@@ -20,7 +20,7 @@ NumClasses = 330 + 1
 
 BATCH_SIZE = 2
 
-MY_EPOCHS = 10
+MY_EPOCHS = 50
 
 trainType = 'syn2syn'
 
@@ -217,36 +217,6 @@ if __name__ == '__main__':
     print(f"Number of annotations: {len(annotations_list)}")
     print(f"Number of images: {len(annotations_by_image.keys())}")
     print(f"Number of classes: {len(annotations_by_class.keys())}")
- #   min_area =  np.inf
- #   min_size = []
- #   max_area = -np.inf
- #   max_size = []
- #   max_height = max_width = -np.inf
- #   size_list = list()
- #   line = 0
- #   too_small = 0
- #   for annotation in annotations_list:
- #       line+=1
- #       size = annotation["size"]
- #       size_list.append(size)
- #       if size[0] * size[1] <= 500:
- #           too_small += 1
- #           #print(f"{line} : {annotation}")
- #           continue
- #       area = size[0]*size[1]
- #       if area < min_area:
- #           min_size = size
- #           min_area = area
- #       if area > max_area:
- #           max_size = size
- #           max_area = area
- #       max_width = np.fmax(max_width, size[0])
- #       max_height = np.fmax(max_height, size[1])
- #   print(f"Num too small: {too_small}")
- #   print(f"Avg size: {np.mean(size_list, axis=0)}")
- #   print(f"Min area size: {min_size}")
- #   print(f"Max area size: {max_size}")
- #   print(f"Max size: {np.array([max_width,max_height])}")
 
    # Avg size: [51.80558886 82.77852721]
    # Min area size: [72.  7.]
@@ -287,7 +257,7 @@ if __name__ == '__main__':
     
     model.compile(optimizer='adam', 
                     loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
-                    loss_weights=[1.0, 1.0, 1.0, 5.0],
+                    loss_weights=[0.5, 10.0, 1.0, 3.0],
                     metrics={'BB_out':keras.metrics.RootMeanSquaredError(), 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
 
     out_concat = keras.layers.concatenate([boundingBox_out, object_out, class_out, count_out, intermediate_net_2], name = 'out_concat')
@@ -312,7 +282,7 @@ if __name__ == '__main__':
 
     boosted_model.compile(optimizer='adam', 
                     loss=['mse', 'mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
-                    loss_weights=[1.0, 1.0, 1.0, 1.0, 10.0],
+                    loss_weights=[1.0, 75.0, 15.0, 1.0, 15.0],
                     metrics={'boost_model':keras.metrics.RootMeanSquaredError(), 'boost_model_1':keras.metrics.RootMeanSquaredError(), 'boost_model_2':'sparse_categorical_accuracy', 'boost_model_3':['sparse_categorical_accuracy', sparce_top5]})
 
 
@@ -334,8 +304,8 @@ if __name__ == '__main__':
 
     model_checkpoint=keras.callbacks.ModelCheckpoint('../weights/EdIntel_weights{epoch:02d}.h5',save_weights_only=True)
 
-    if(os.path.exists('last_weights.h5')):
-        model.load_weights('last_weights.h5')
+    if(os.path.exists('last_weights_'+trainType+'.h5')):
+        model.load_weights('last_weights_'+trainType+'.h5')
         print('loaded last saved weights')
     model.summary()
     if(os.path.exists('boost_'+trainType+'.h5')):
@@ -365,14 +335,40 @@ if __name__ == '__main__':
             print("all on")
         print(f"Starting Epoch {epoch+1}/{MY_EPOCHS}")
         model.fit(train_gen, batch_size=BATCH_SIZE, epochs=1, validation_data=val_gen, callbacks=[model_checkpoint])
-        model.save_weights('last_weights.h5')
+        model.save_weights('last_weights_'+trainType+'.h5')
         train_names, validate_names, tmp = separateData(names_list,numTest=0)
         train_gen = DatasetFromImageNames_Generator(train_names,BATCH_SIZE,annotations_by_image,classMap)
         val_gen = DatasetFromImageNames_Generator(validate_names,BATCH_SIZE,annotations_by_image,classMap)
 
-        if epoch%4 == 3:
+        if True : #epoch%4 == 3:
 
             print(f"Boosted Epoch {epoch+1}/{MY_EPOCHS}")   
+            if phase == 0:
+                boost_net_1.trainable = False
+                boost_net_2.trainable = False
+                boost_net_3.trainable = False
+                boost_net_4.trainable = False
+                boost_net_5.trainable = False
+                boost_net_6.trainable = False
+                print("boost 1-6 off") 
+            if phase == 1:
+                boost_net_1.trainable = True
+                boost_net_2.trainable = True
+                boost_net_3.trainable = True
+                boost_net_4.trainable = False
+                boost_net_5.trainable = False
+                boost_net_6.trainable = False
+                print("boost 4-6 off") 
+            if phase == 2:
+                boost_net_1.trainable = False
+                boost_net_2.trainable = False
+                boost_net_3.trainable = False
+                boost_net_4.trainable = True
+                boost_net_5.trainable = True
+                boost_net_6.trainable = True
+                print("boost 1-3 off") 
+            
+
             intermediate_net_1.trainable = False
             intermediate_net_2.trainable = False
             boundingBox_out.trainable = False    

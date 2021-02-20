@@ -20,6 +20,8 @@ NumClasses = 330 + 1
 
 BATCH_SIZE = 1
 
+trainType = 'syn2syn'
+
 # Reads annotation file into a full annotations list, as well as by image and by class dicts
 # annotation is dict with keys:
 #   image: image name string
@@ -248,8 +250,8 @@ if __name__ == '__main__':
     test_gen = DatasetFromImageNames_Generator(test_names,BATCH_SIZE,annotations_by_image,classMap)
 
 
-    if(os.path.exists('last_weights.h5')):
-        model.load_weights('last_weights.h5')
+    if(os.path.exists('last_weights_'+trainType+'.h5')):
+        model.load_weights('last_weights_'+trainType+'.h5')
         print('loaded last saved weights')
     else:
         print('ERROR: No saved weights')
