@@ -33,12 +33,56 @@ testInSyn = False
 #testInReal = True
 testInSyn = True
 
+
 # adapted from https://stackoverflow.com/questions/2225564/get-a-filtered-list-of-files-in-a-directory
 def listImagesInFolder(in_path):
     included_extensions = ['jpg','jpeg', 'bmp', 'png', 'gif']
     file_names = [fn for fn in os.listdir(in_path)
               if any(fn.endswith(ext) for ext in included_extensions)]
     return file_names
+
+def writeAnnotation(in_file, in_annotation):
+    image_name = in_annotation['image']
+    centre = in_annotation['centre']
+    halthSize = in_annotation['size']/2
+    BBMin = centre - halthSize
+    BBMax = centre + halthSize
+    xmin = int(max(0, min(Image_Width, BBMin[0])))
+    ymin = int(max(0, min(Image_Width, BBMin[1])))
+    xmax = int(max(0, min(Image_Width, BBMax[0])))
+    ymax = int(max(0, min(Image_Width, BBMax[1])))
+    class_name = in_annotation['class']
+    if locOnly == True:
+        class_name = 'object'
+    
+    in_file.write(f"{image_name}, {xmin}, {ymin}, {xmax}, {ymax}, {class_name} \n") 
+
+def createAnnotationsForImage(in_imageName, in_BBPrediction, in_ObjectPrediction, in_ClassPrediction, in_classMap):
+    #TODO: use input image dimentions to calculate prediction shapes
+
+    annotations_list_for_img = list()
+
+    for blockY in range(34):
+        for blockX in range(60):
+            blockCentre = np.array([blockX*32 +16, blockY*32+16], dtype=float)
+            predictedTop2 = findTopNPredict(2, in_ClassPrediction[blockY][blockX])
+            predictedClass = predictedTop2[0] 
+            if predictedClass == 0  and in_ClassPrediction[blockY][blockX][0] < 0.5:
+                predictedClass = predictedTop2[1] 
+            if in_ObjectPrediction[blockY][blockX][1] > 0.5 and predictedClass > 0:
+            #if predictedClass > 0:
+                annotation = dict()
+                annotation['image'] = in_imageName
+                annotation['class'] = classMap['toClass'][predictedClass]
+                annotation['centre'] = blockCentre + np.array([in_BBPrediction[blockY][blockX][0], in_BBPrediction[blockY][blockX][1]])
+                annotation['size'] = np.array([in_BBPrediction[blockY][blockX][2], in_BBPrediction[blockY][blockX][3]])
+                annotations_list_for_img.append(annotation)     
+    return annotations_list_for_img
+
+def writeAnnotationsForImage(in_file, in_imageName, in_BBPrediction, in_ObjectPrediction, in_ClassPrediction, in_classMap):
+    annotations_list_for_img = createAnnotationsForImage(in_imageName, in_BBPrediction, in_ObjectPrediction, in_ClassPrediction, in_classMap)
+    for annotation in annotations_list_for_img:
+        writeAnnotation(in_file, annotation)
 
 # Reads annotation file into a full annotations list, as well as by image and by class dicts
 # annotation is dict with keys:
@@ -116,9 +160,9 @@ def highlightAllInPredictions(in_image, in_BBPrediction, in_ObjectPrediction, in
             blockCentre = np.array([blockX*32 +16, blockY*32+16], dtype=float)
             predictedTop2 = findTopNPredict(2, in_ClassPrediction[blockY][blockX])
             predictedClass = predictedTop2[0] 
-            if predictedClass == 0 and in_ClassPrediction[blockY][blockX][0] < 0.8:
-                predictedClass = 1
-            if in_ObjectPrediction[blockY][blockX][1] > 0.5: # and predictedClass > 0:
+            if predictedClass == 0  and in_ClassPrediction[blockY][blockX][0] < 0.5:
+                predictedClass = predictedTop2[1] 
+            if in_ObjectPrediction[blockY][blockX][1] > 0.5 and predictedClass > 0:
                 annotation = dict()
                 if locOnly == True:
                     annotation['class'] = 'object'
@@ -126,7 +170,7 @@ def highlightAllInPredictions(in_image, in_BBPrediction, in_ObjectPrediction, in
                     annotation['class'] = classMap['toClass'][predictedClass]
                 annotation['centre'] = blockCentre + np.array([in_BBPrediction[blockY][blockX][0], in_BBPrediction[blockY][blockX][1]])
                 annotation['size'] = np.array([in_BBPrediction[blockY][blockX][2], in_BBPrediction[blockY][blockX][3]])
-                print(f"{annotation['class']} at {annotation['centre']}")
+                #print(f"{annotation['class']} at {annotation['centre']}")
                 highlightAnnotation(in_image, annotation)
     return 
 
@@ -160,28 +204,28 @@ if __name__ == '__main__':
     ClassModel = keras.Model(input_layer, class_out)
 
     model = keras.Model(input_layer, [boundingBox_out, object_out, class_out, count_out])
-    sparce_top5 = keras.metrics.SparseTopKCategoricalAccuracy(k=5)
+ #   sparce_top5 = keras.metrics.SparseTopKCategoricalAccuracy(k=5)
     
-    model.compile(optimizer='adam', 
-                    loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy'], 
-                    loss_weights=[0.05, 1.0, 5.0],
-                    metrics={'BB_out':keras.metrics.RootMeanSquaredError(), 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
+#    model.compile(optimizer='adam', 
+#                    loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy'], 
+#                    loss_weights=[0.05, 1.0, 5.0],
+#                    metrics={'BB_out':keras.metrics.RootMeanSquaredError(), 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
 
-    if(not os.path.exists('test_names.json')):
-        print('no test dataset')
-    else:
-        test_names_json = JsonUtils.readJsonFromFile('test_names.json')
-        test_names = test_names_json['name_list']
-        print('remembered to exclude test dataset')
-    image_path = os.path.join(dataset_path['syn'], image_sub_path) 
+    #if(not os.path.exists('test_names.json')):
+    #    print('no test dataset')
+    #else:
+    #    test_names_json = JsonUtils.readJsonFromFile('test_names.json')
+    #    test_names = test_names_json['name_list']
+    #    print('remembered to exclude test dataset')
+    #image_path = os.path.join(dataset_path['syn'], image_sub_path) 
 
     if testInSyn == True:
         image_path = os.path.join(test_path['syn'], image_sub_path) 
-        test_names = listImagesInFolder(path)
+        test_names = listImagesInFolder(image_path)
 
     if testInReal == True:
         image_path = os.path.join(test_path['real'], image_sub_path) 
-        test_names = listImagesInFolder(path)
+        test_names = listImagesInFolder(image_path)
 
 
     if(os.path.exists('last_weights_'+trainType+'.h5')):
@@ -195,6 +239,19 @@ if __name__ == '__main__':
     img_count = 0
     images = dict()
     
+    out_file_name = trainType
+    if locOnly == True:
+        out_file_name += '_Loc' 
+    else:
+        out_file_name += '_Class' 
+    if testInReal:
+        out_file_name += '_TestInReal'
+    if testInSyn:
+        out_file_name += '_TestInSyn'
+    
+    out_file_name += '.csv'
+    fp = open(out_file_name, 'w')
+
     for image_name in test_names:
         image = plt.imread(os.path.join(image_path, image_name))
         img_count+=1
@@ -207,17 +264,22 @@ if __name__ == '__main__':
         ObjectPrediction = ObjModel.predict(batch_preprocessed)[0] 
         ClassPrediction = ClassModel.predict(batch_preprocessed)[0] 
 
-        highlightAllInPredictions(preprocessed, BBPrediction, ObjectPrediction, ClassPrediction, classMap)
+        writeAnnotationsForImage(fp,image_name, BBPrediction, ObjectPrediction, ClassPrediction, classMap)
 
-        fig = createFigure('image '+image_name)
-        plt.imshow(image)
-        # TODO: draw label text
-        plt.show(block=False)
-        fig = createFigure('preprocessed '+image_name)
-        plt.imshow(preprocessed)
-        plt.show()
-        if(img_count % 1000 == 0):
+        if False:
+            highlightAllInPredictions(preprocessed, BBPrediction, ObjectPrediction, ClassPrediction, classMap)
+            fig = createFigure('image '+image_name)
+            plt.imshow(image)
+            # TODO: draw label text
+            plt.show(block=False)
+            fig = createFigure('preprocessed '+image_name)
+            plt.imshow(preprocessed)
+            plt.show()
+
+        if(img_count % 100 == 0):
             print(f"num images loaded: {img_count}")
             #print(f"image memory: {ProfilingUtils.getsize(images)}")
-        
+    
+    fp.close() 
+
     print(f"all images loaded: {img_count}")
