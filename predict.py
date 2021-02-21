@@ -9,6 +9,9 @@ import random
 dataset_path = dict()
 dataset_path['syn'] = "../EdIntelligence-Neurolabs-Hackathon/common/train/syn/"
 dataset_path['real'] = "../EdIntelligence-Neurolabs-Hackathon/challenge-2/train/real/"
+test_path = dict()
+test_path['syn'] = "../EdIntelligence-Neurolabs-Hackathon/challenge-1/test/"
+test_path['real'] = "../EdIntelligence-Neurolabs-Hackathon/challenge-2/test/"
 image_sub_path = "images/"
 challenge1_syn_csv = "annotations-detection.csv"
 challenge2_syn_csv = "annotations-localization.csv"
@@ -24,6 +27,18 @@ trainType = 'syn2syn'
 #trainType = 'sr2real'
 
 locOnly = False
+
+testInReal = False
+testInSyn = False
+#testInReal = True
+testInSyn = True
+
+# adapted from https://stackoverflow.com/questions/2225564/get-a-filtered-list-of-files-in-a-directory
+def listImagesInFolder(in_path):
+    included_extensions = ['jpg','jpeg', 'bmp', 'png', 'gif']
+    file_names = [fn for fn in os.listdir(in_path)
+              if any(fn.endswith(ext) for ext in included_extensions)]
+    return file_names
 
 # Reads annotation file into a full annotations list, as well as by image and by class dicts
 # annotation is dict with keys:
@@ -158,6 +173,15 @@ if __name__ == '__main__':
         test_names_json = JsonUtils.readJsonFromFile('test_names.json')
         test_names = test_names_json['name_list']
         print('remembered to exclude test dataset')
+    image_path = os.path.join(dataset_path['syn'], image_sub_path) 
+
+    if testInSyn == True:
+        image_path = os.path.join(test_path['syn'], image_sub_path) 
+        test_names = listImagesInFolder(path)
+
+    if testInReal == True:
+        image_path = os.path.join(test_path['real'], image_sub_path) 
+        test_names = listImagesInFolder(path)
 
 
     if(os.path.exists('last_weights_'+trainType+'.h5')):
@@ -170,7 +194,7 @@ if __name__ == '__main__':
     
     img_count = 0
     images = dict()
-    image_path = os.path.join(dataset_path['syn'], image_sub_path) 
+    
     for image_name in test_names:
         image = plt.imread(os.path.join(image_path, image_name))
         img_count+=1
