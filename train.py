@@ -20,7 +20,7 @@ NumClasses = 330 + 1
 
 BATCH_SIZE = 2
 
-MY_EPOCHS = 30
+MY_EPOCHS = 40
 
 trainType = 'syn2syn'
 
@@ -257,7 +257,7 @@ if __name__ == '__main__':
     
     model.compile(optimizer='adam', 
                     loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
-                    loss_weights=[0.5, 10.0, 1.0, 5.0],
+                    loss_weights=[0.5, 10.0, 1.0, 7.0],
                     metrics={'BB_out':keras.metrics.RootMeanSquaredError(), 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
 
     out_concat = keras.layers.concatenate([boundingBox_out, object_out, class_out, count_out, intermediate_net_2], name = 'out_concat')
@@ -281,10 +281,10 @@ if __name__ == '__main__':
 
     boosted_model = keras.Model(input_layer, boost_model_out) 
 
-    boosted_model.compile(optimizer='adam', 
-                    loss=['mse', 'mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
-                    loss_weights=[1.0, 75.0, 10.0, 10.0, 10.0],
-                    metrics={'boost_model':keras.metrics.RootMeanSquaredError(), 'boost_model_1':keras.metrics.RootMeanSquaredError(), 'boost_model_2':'sparse_categorical_accuracy', 'boost_model_3':['sparse_categorical_accuracy', sparce_top5]})
+    #boosted_model.compile(optimizer='adam', 
+    #                loss=['mse', 'mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
+    #                loss_weights=[1.0, 75.0, 10.0, 10.0, 10.0],
+    #                metrics={'boost_model':keras.metrics.RootMeanSquaredError(), 'boost_model_1':keras.metrics.RootMeanSquaredError(), 'boost_model_2':'sparse_categorical_accuracy', 'boost_model_3':['sparse_categorical_accuracy', sparce_top5]})
 
 
     if(not os.path.exists('test_names.json')):
@@ -316,32 +316,35 @@ if __name__ == '__main__':
     for epoch in range(MY_EPOCHS):
     #if True:
         phase = epoch%3 
-        if phase == 0:
+        if True:
+        #if phase == 0:
             intermediate_net_1.trainable = False
             intermediate_net_2.trainable = False  
             boundingBox_out.trainable = True
             object_out.trainable = True 
             print("intermideate off") 
-        if phase == 1:
+        if False:
+        #if phase == 1:
             intermediate_net_1.trainable = True
             intermediate_net_2.trainable = True
             boundingBox_out.trainable = False
             object_out.trainable = False
             print("BBout and ObjOut off")
-        if phase == 2:
+        if True:
+        #if phase == 2:
             intermediate_net_1.trainable = True
             intermediate_net_2.trainable = True
             boundingBox_out.trainable = True
             object_out.trainable = True
             print("all on")
         print(f"Starting Epoch {epoch+1}/{MY_EPOCHS}")
-        model.fit(train_gen, batch_size=BATCH_SIZE, epochs=1, validation_data=val_gen, callbacks=[model_checkpoint])
+        model.fit(train_gen, batch_size=BATCH_SIZE, epochs=1)#, validation_data=val_gen, callbacks=[model_checkpoint])
         model.save_weights('last_weights_'+trainType+'.h5')
         train_names, validate_names, tmp = separateData(names_list,numTest=0)
         train_gen = DatasetFromImageNames_Generator(train_names,BATCH_SIZE,annotations_by_image,classMap)
         val_gen = DatasetFromImageNames_Generator(validate_names,BATCH_SIZE,annotations_by_image,classMap)
 
-        if True : #epoch%4 == 3:
+        if False : #epoch%4 == 3:
 
             print(f"Boosted Epoch {epoch+1}/{MY_EPOCHS}")   
             if phase == 0:
