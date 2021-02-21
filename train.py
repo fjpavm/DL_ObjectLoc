@@ -20,7 +20,7 @@ NumClasses = 330 + 1
 
 BATCH_SIZE = 2
 
-MY_EPOCHS = 50
+MY_EPOCHS = 30
 
 trainType = 'syn2syn'
 
@@ -257,7 +257,7 @@ if __name__ == '__main__':
     
     model.compile(optimizer='adam', 
                     loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
-                    loss_weights=[0.5, 10.0, 1.0, 3.0],
+                    loss_weights=[0.5, 10.0, 1.0, 5.0],
                     metrics={'BB_out':keras.metrics.RootMeanSquaredError(), 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
 
     out_concat = keras.layers.concatenate([boundingBox_out, object_out, class_out, count_out, intermediate_net_2], name = 'out_concat')
@@ -276,13 +276,14 @@ if __name__ == '__main__':
     boost_count_out = keras.layers.Conv2D(1, (9,9), activation='linear', padding='same', name='boost_count_out')(boost_object_out)
 
     boost_model = keras.Model(boost_input, [boost_pos_out, boost_size_out, boost_object_out, boost_class_out, boost_count_out], name='boost_model')
+    boost_model.trainable = False
     boost_model_out = boost_model(out_concat)
 
-    boosted_model = keras.Model(input_layer, boost_model_out)
+    boosted_model = keras.Model(input_layer, boost_model_out) 
 
     boosted_model.compile(optimizer='adam', 
                     loss=['mse', 'mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
-                    loss_weights=[1.0, 75.0, 15.0, 1.0, 15.0],
+                    loss_weights=[1.0, 75.0, 10.0, 10.0, 10.0],
                     metrics={'boost_model':keras.metrics.RootMeanSquaredError(), 'boost_model_1':keras.metrics.RootMeanSquaredError(), 'boost_model_2':'sparse_categorical_accuracy', 'boost_model_3':['sparse_categorical_accuracy', sparce_top5]})
 
 
@@ -368,24 +369,12 @@ if __name__ == '__main__':
                 boost_net_6.trainable = True
                 print("boost 1-3 off") 
             
-
-            intermediate_net_1.trainable = False
-            intermediate_net_2.trainable = False
-            boundingBox_out.trainable = False    
-            object_out.trainable = False  
-            class_out.trainable = False 
-            count_out.trainable = False 
             train_names, validate_names, tmp = separateData(names_list,numTest=0)
             boosted_train_gen = DatasetFromImageNames_Generator(train_names,BATCH_SIZE,annotations_by_image,classMap, True)
             boosted_val_gen = DatasetFromImageNames_Generator(validate_names,BATCH_SIZE,annotations_by_image,classMap, True)
             boosted_model.fit(boosted_train_gen, batch_size=BATCH_SIZE, epochs=1, validation_data=boosted_val_gen)
             boost_model.save_weights('boost_'+trainType+'.h5')
-            intermediate_net_1.trainable = True
-            intermediate_net_2.trainable = True
-            boundingBox_out.trainable = True    
-            object_out.trainable = True  
-            class_out.trainable = True 
-            count_out.trainable = True
+
 
     """  img_count = 0
     images = dict()
