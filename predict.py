@@ -21,6 +21,9 @@ NumClasses = 330 + 1
 BATCH_SIZE = 1
 
 trainType = 'syn2syn'
+#trainType = 'sr2real'
+
+locOnly = False
 
 # Reads annotation file into a full annotations list, as well as by image and by class dicts
 # annotation is dict with keys:
@@ -102,99 +105,15 @@ def highlightAllInPredictions(in_image, in_BBPrediction, in_ObjectPrediction, in
                 predictedClass = 1
             if in_ObjectPrediction[blockY][blockX][1] > 0.5: # and predictedClass > 0:
                 annotation = dict()
-                annotation['class'] = classMap['toClass'][predictedClass]
+                if locOnly == True:
+                    annotation['class'] = 'object'
+                else:
+                    annotation['class'] = classMap['toClass'][predictedClass]
                 annotation['centre'] = blockCentre + np.array([in_BBPrediction[blockY][blockX][0], in_BBPrediction[blockY][blockX][1]])
                 annotation['size'] = np.array([in_BBPrediction[blockY][blockX][2], in_BBPrediction[blockY][blockX][3]])
                 print(f"{annotation['class']} at {annotation['centre']}")
                 highlightAnnotation(in_image, annotation)
     return 
-
-def extractBestAnnotationForBlock(in_blockCentre, in_image_annotations):
-    minOverlap = 16 #pixels
-    blockRangeHalfSize = (32.0*7)/2
-    bestAnnotation = None
-    bestDistance = np.inf
-    # check for objects in block range with at least 16 pixel width and height overlap
-    # and from these choose object annotation closest to centre as best
-    for annotation in in_image_annotations:
-        annotationCentre = annotation['centre']
-        annotationHalfSize = annotation['size']/2
-        centreDiff = annotationCentre-in_blockCentre
-        if (abs(centreDiff[0]) < blockRangeHalfSize + annotationHalfSize[0] - minOverlap) and (abs(centreDiff[1]) < blockRangeHalfSize + annotationHalfSize[0] - minOverlap): 
-            centreDistance = np.linalg.norm(annotationCentre-in_blockCentre)
-            if centreDistance < bestDistance:
-                bestAnnotation = annotation
-    return bestAnnotation
-
-def createTrainingForImage(in_imageName, in_annotations_by_image, in_classMap):
-    image_annotations = in_annotations_by_image[in_imageName]
-    #TODO: use input image dimentions to calculate prediction shapes
-    BBPrediction = np.zeros((34,60,4))
-    ObjectPrediction = np.zeros((34,60),dtype=int)
-    ClassPrediction = np.zeros((34,60),dtype=int)
-
-    for blockY in range(34):
-        for blockX in range(60):
-            blockCentre = np.array([blockX*32 +16, blockY*32+16], dtype=float)
-            bestAnnotation = extractBestAnnotationForBlock(blockCentre, image_annotations)
-            if bestAnnotation == None:
-                # default no object to X and Y size of block (32 pixels)
-                BBPrediction[blockY][blockX][2] = 32
-                BBPrediction[blockY][blockX][3] = 32
-            else:
-                centre = bestAnnotation['centre']-blockCentre
-                size = bestAnnotation['size']
-                BBPrediction[blockY][blockX][0] = centre[0] 
-                BBPrediction[blockY][blockX][1] = centre[1]
-                BBPrediction[blockY][blockX][2] = size[0]
-                BBPrediction[blockY][blockX][3] = size[1]
-                ObjectPrediction[blockY][blockX] = 1
-                ClassPrediction[blockY][blockX] = in_classMap['toInt'][bestAnnotation['class']]
-    return BBPrediction, ObjectPrediction, ClassPrediction
-
-class DatasetFromImageNames_Generator(keras.utils.Sequence) :
-
-    def __init__(self, in_image_names, in_batch_size, in_annotations_by_image, in_classMap) :
-        self.m_image_names = in_image_names
-        self.m_batch_size = in_batch_size        
-        self.m_annotations_by_image = in_annotations_by_image
-        self.m_classMap = in_classMap
-
-    def __len__(self) :
-        return (np.ceil(len(self.m_image_names) / float(self.m_batch_size))).astype(np.int)
-    
-    def __getitem__(self, idx) :
-        batch_image_names = self.m_image_names[idx * self.m_batch_size : (idx+1) * self.m_batch_size]
-
-        batch_images = list()
-        batch_BBoxes = list()
-        batch_Objects = list()
-        batch_Classes = list()
-
-        #Create batch training data from filenames
-        for image_name in batch_image_names:
-            source = self.m_annotations_by_image[image_name][0]['source']
-            image_path = os.path.join(dataset_path[source], image_sub_path, image_name) 
-            image = plt.imread(image_path)
-            preprocessed = keras.applications.mobilenet_v2.preprocess_input(image)
-            batch_images.append(preprocessed)
-
-            BBPrediction, ObjectPrediction, ClassPrediction = createTrainingForImage(image_name, self.m_annotations_by_image, self.m_classMap)
-            batch_BBoxes.append(BBPrediction)
-            batch_Objects.append(ObjectPrediction)
-            batch_Classes.append(ClassPrediction)
-
-        return np.array(batch_images), [np.array(batch_BBoxes), np.array(batch_Objects), np.array(batch_Classes)]
-
-def separateData(list_of_data, numTrain=200, numValidate=40, numTest=200):
-    list_of_data_copy = list(list_of_data)
-    random.shuffle(list_of_data_copy)
-    train_list = list_of_data_copy[0:numTrain]
-    validate_list = list_of_data_copy[numTrain:numTrain+numValidate]
-    test_list = list_of_data_copy[numTrain+numValidate:numTrain+numValidate+numTest]
-    return train_list, validate_list, test_list
-
-
 
 if __name__ == '__main__':
     challenge1_csv_path = os.path.join(dataset_path['syn'], challenge1_syn_csv) 
@@ -234,20 +153,11 @@ if __name__ == '__main__':
                     metrics={'BB_out':keras.metrics.RootMeanSquaredError(), 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
 
     if(not os.path.exists('test_names.json')):
-        train_names, validate_names, test_names = separateData(annotations_by_image.keys())
-        test_names_json = dict()
-        test_names_json['name_list'] = test_names
-        JsonUtils.writeJsonToFile('test_names.json',test_names_json)
+        print('no test dataset')
     else:
         test_names_json = JsonUtils.readJsonFromFile('test_names.json')
         test_names = test_names_json['name_list']
-        names_list = [image_name for image_name in annotations_by_image.keys() if image_name not in test_names]
-        train_names, validate_names, tmp = separateData(names_list,numTest=0)
         print('remembered to exclude test dataset')
-
-    train_gen = DatasetFromImageNames_Generator(train_names,BATCH_SIZE,annotations_by_image,classMap)
-    val_gen = DatasetFromImageNames_Generator(validate_names,BATCH_SIZE,annotations_by_image,classMap)
-    test_gen = DatasetFromImageNames_Generator(test_names,BATCH_SIZE,annotations_by_image,classMap)
 
 
     if(os.path.exists('last_weights_'+trainType+'.h5')):
