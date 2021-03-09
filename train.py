@@ -20,7 +20,7 @@ NumClasses = 330 + 1
 
 BATCH_SIZE = 2
 
-MY_EPOCHS = 40
+MY_EPOCHS = 80
 
 trainType = 'syn2syn'
 
@@ -252,12 +252,12 @@ if __name__ == '__main__':
     #old_model.load_weights('last_weights_old.h5')
     model = keras.Model(input_layer, [boundingBox_out, object_out, class_out, count_out])
 
-    sparce_top5 = keras.metrics.SparseTopKCategoricalAccuracy(k=5)
+    sparce_top5 = keras.metrics.SparseTopKCategoricalAccuracy(k=3)
 
     
     model.compile(optimizer='adam', 
                     loss=['mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
-                    loss_weights=[0.5, 10.0, 1.0, 7.0],
+                    loss_weights=[0.5, 1.0, 3.0, 3.0],
                     metrics={'BB_out':keras.metrics.RootMeanSquaredError(), 'obj_out':'sparse_categorical_accuracy', 'class_out':['sparse_categorical_accuracy', sparce_top5]})
 
     out_concat = keras.layers.concatenate([boundingBox_out, object_out, class_out, count_out, intermediate_net_2], name = 'out_concat')
@@ -281,10 +281,10 @@ if __name__ == '__main__':
 
     boosted_model = keras.Model(input_layer, boost_model_out) 
 
-    #boosted_model.compile(optimizer='adam', 
-    #                loss=['mse', 'mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
-    #                loss_weights=[1.0, 75.0, 10.0, 10.0, 10.0],
-    #                metrics={'boost_model':keras.metrics.RootMeanSquaredError(), 'boost_model_1':keras.metrics.RootMeanSquaredError(), 'boost_model_2':'sparse_categorical_accuracy', 'boost_model_3':['sparse_categorical_accuracy', sparce_top5]})
+    boosted_model.compile(optimizer='adam', 
+                    loss=['mse', 'mse', 'sparse_categorical_crossentropy', 'sparse_categorical_crossentropy', 'mse'], 
+                    loss_weights=[1.0, 75.0, 10.0, 10.0, 10.0],
+                    metrics={'boost_model':keras.metrics.RootMeanSquaredError(), 'boost_model_1':keras.metrics.RootMeanSquaredError(), 'boost_model_2':'sparse_categorical_accuracy', 'boost_model_3':['sparse_categorical_accuracy', sparce_top5]})
 
 
     if(not os.path.exists('test_names.json')):
@@ -315,30 +315,30 @@ if __name__ == '__main__':
     boosted_model.summary()
     for epoch in range(MY_EPOCHS):
     #if True:
-        phase = epoch%3 
-        if True:
-        #if phase == 0:
+        phase = int(3*epoch/MY_EPOCHS) 
+        #if True:
+        if phase == 0:
             intermediate_net_1.trainable = False
             intermediate_net_2.trainable = False  
             boundingBox_out.trainable = True
             object_out.trainable = True 
-            print("intermideate off") 
-        if False:
-        #if phase == 1:
-            intermediate_net_1.trainable = True
+            print("intermideates off") 
+        #if False:
+        if phase == 1:
+            intermediate_net_1.trainable = False
             intermediate_net_2.trainable = True
-            boundingBox_out.trainable = False
-            object_out.trainable = False
-            print("BBout and ObjOut off")
-        if True:
-        #if phase == 2:
+            boundingBox_out.trainable = True
+            object_out.trainable = True
+            print("intermideate 1 off")
+        #if True:
+        if phase == 2:
             intermediate_net_1.trainable = True
             intermediate_net_2.trainable = True
             boundingBox_out.trainable = True
             object_out.trainable = True
             print("all on")
         print(f"Starting Epoch {epoch+1}/{MY_EPOCHS}")
-        model.fit(train_gen, batch_size=BATCH_SIZE, epochs=1)#, validation_data=val_gen, callbacks=[model_checkpoint])
+        model.fit(train_gen, batch_size=BATCH_SIZE, epochs=1, validation_data=val_gen)
         model.save_weights('last_weights_'+trainType+'.h5')
         train_names, validate_names, tmp = separateData(names_list,numTest=0)
         train_gen = DatasetFromImageNames_Generator(train_names,BATCH_SIZE,annotations_by_image,classMap)
@@ -379,44 +379,4 @@ if __name__ == '__main__':
             boost_model.save_weights('boost_'+trainType+'.h5')
 
 
-    """  img_count = 0
-    images = dict()
-    image_path = os.path.join(dataset_path['syn'], image_sub_path) 
-    for image_name in annotations_by_image.keys():
-        image = plt.imread(os.path.join(image_path, image_name))
-        img_count+=1
-        preprocessed = keras.applications.mobilenet_v2.preprocess_input(image)
-        batch_preprocessed = np.array([preprocessed])
-        predictions = ObjModel.predict(batch_preprocessed)
-
-        BBPrediction, ObjectPrediction, ClassPrediction = createTrainingForImage(image_name, annotations_by_image, classMap)
-
-        annotation = dict()
-        blockX = 10
-        blockY = 10
-        blockCentre = np.array([blockX*32 +16, blockY*32+16], dtype=float)
-        annotation['class'] = classMap['toClass'][ClassPrediction[blockY][blockX]]
-        annotation['centre'] = blockCentre + np.array([BBPrediction[blockY][blockX][0], BBPrediction[blockY][blockX][1]])
-        annotation['size'] = np.array([BBPrediction[blockY][blockX][2], BBPrediction[blockY][blockX][3]])
-
-        print(f"{annotation['class']} at {annotation['centre']}")
-
-        highlightAnnotation(preprocessed, annotation)
-
-        print(f"new model predictions shape: {np.shape(predictions)}")
-        print(f"image shape: {np.shape(image)}")
-        print(f"preprocessed image shape: {np.shape(preprocessed)}")
-        #images[image_name] = image
-        #plt.close()
-        fig = createFigure('image '+image_name)
-        plt.imshow(image)
-        # TODO: draw label text
-        plt.show(block=False)
-        fig = createFigure('preprocessed '+image_name)
-        plt.imshow(preprocessed)
-        plt.show()
-        if(img_count % 1000 == 0):
-            print(f"num images loaded: {img_count}")
-            #print(f"image memory: {ProfilingUtils.getsize(images)}")
-        
-    print(f"all images loaded: {img_count}") """
+ 
